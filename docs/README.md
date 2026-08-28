@@ -54,11 +54,15 @@ If you're new to Craft MCP, we recommend following these steps:
 
 ## Quick Reference
 
-Install as a module. Copy this directory to `modules/mcp`, register it in `config/app.php` (see [Installation](installation.md)), then from your Craft root:
+Install as a module. From your Craft root:
 
 ```bash
-composer config repositories.craft-mcp path modules/mcp
-composer require happy-horizon/craft-mcp:*
+composer require happy-horizon/craft-mcp:dev-main
+```
+
+Register it in `config/app.php` under the id `mcp`, with `mcp` in `bootstrap` too (see [Installation](installation.md)), then create its tables:
+
+```bash
 php craft mcp/setup
 ```
 
@@ -76,6 +80,7 @@ Connect your AI assistant with the wizard (`php craft mcp/install`) or manually 
 
 ## Links
 
-- [GitHub Repository](https://github.com/stimmtdigital/craft-mcp)
-- [Report Issues](https://github.com/stimmtdigital/craft-mcp/issues)
-- [Stimmt Digital](https://stimmt.digital)
+- [Packagist Package](https://packagist.org/packages/happy-horizon/craft-mcp)
+- [GitHub Repository](https://github.com/NathanReul/happy_mcp_craft)
+- [Report Issues](https://github.com/NathanReul/happy_mcp_craft/issues)
+- [Upstream project (stimmt/craft-mcp)](https://github.com/stimmtdigital/craft-mcp)

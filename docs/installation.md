@@ -6,64 +6,43 @@ This guide walks you through installing Craft MCP and connecting it to your pref
 
 Before installing Craft MCP, ensure your environment meets these requirements:
 
-- **Craft CMS** 5.0 or later
+- **Craft CMS** 5.1 or later
 - **PHP** 8.3 or later
+- **Composer** 2
 
 The module is compatible with all database drivers supported by Craft CMS (MySQL, PostgreSQL).
 
 ## Install the Module
 
-Craft MCP is a plain Craft module in a plain Composer package: no plugin store, no license key, no plugin lifecycle.
+Craft MCP is a plain Craft module in a plain Composer package: no plugin store, no license key, no plugin lifecycle. It is published on Packagist as [`happy-horizon/craft-mcp`](https://packagist.org/packages/happy-horizon/craft-mcp).
 
-Two ways in. If the code lives in your own Git repo (or on Packagist), require it as a Composer package and skip straight to step 3:
+### 1. Require the package
+
+From your Craft root - the directory holding `composer.json`, `config/` and the `craft` executable:
 
 ```bash
+composer require happy-horizon/craft-mcp:dev-main
+```
+
+The `main` branch is the only thing published so far, hence the explicit `dev-main` constraint; Composer records the stability flag for you, so your project's `minimum-stability` stays as it is. Switch to `composer require happy-horizon/craft-mcp` once a release is tagged.
+
+Composer may ask to allow the `php-http/discovery` plugin the first time. It is part of the PSR-7 stack the MCP SDK uses; allow it.
+
+### 2. Or install from a fork or a checkout
+
+Running your own fork, or editing the module in place? Both routes are Composer routes as well - a VCS repository for a fork, a path repository for an in-project checkout:
+
+```bash
+# a fork
 composer config repositories.craft-mcp vcs https://github.com/<you>/craft-mcp.git
-composer require happy-horizon/craft-mcp:^1.0
-```
+composer require happy-horizon/craft-mcp:dev-main
 
-Otherwise copy it into the project, as steps 1 and 2 describe. Both routes in full: [INSTALL.md](../INSTALL.md).
-
-### 1. Copy the code
-
-Put this directory at `modules/mcp` in your Craft project. Any path works; `modules/` is the Craft convention.
-
-```bash
-# from your Craft root
-git clone https://github.com/stimmtdigital/craft-mcp.git modules/mcp
-rm -rf modules/mcp/.git
-```
-
-Or simply copy the folder there.
-
-### 2. Autoload it and pull in its dependencies
-
-The module has Composer dependencies of its own (the MCP SDK, PsySH, a PSR-7 implementation), so it cannot be autoloaded by copying alone. A path repository handles autoloading and dependencies in one step:
-
-```bash
-# from your Craft root
+# a checkout at modules/mcp, symlinked into vendor/ so your edits are live
 composer config repositories.craft-mcp path modules/mcp
 composer require happy-horizon/craft-mcp:*
 ```
 
-Composer symlinks `modules/mcp` into `vendor/`, so edits to the module take effect immediately, and `composer update` never overwrites it with a Packagist release.
-
-Prefer not to use a path repository? Wire it by hand in your project's `composer.json`:
-
-```json
-{
-    "autoload": {
-        "psr-4": {
-            "stimmt\\craft\\Mcp\\": "modules/mcp/src/"
-        }
-    }
-}
-```
-
-```bash
-composer require mcp/sdk psy/psysh nyholm/psr7 psr/event-dispatcher psr/simple-cache symfony/finder symfony/polyfill-php84
-composer dump-autoload
-```
+There is no route without Composer: the module has dependencies of its own (the MCP SDK, PsySH, a PSR-7 implementation) that must resolve into the same `vendor/` tree as Craft's. Both alternatives in full: [INSTALL.md](../INSTALL.md).
 
 ### 3. Register the module
 
