@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, pdo_mysql, bcmath, intl
+          coverage: none
+
+      - name: Validate composer.json
+        run: composer validate --strict
+
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      # To cut a pre-release: git tag v1.4.0-beta.1 && git push origin v1.4.0-beta.1
+      # Pre-release tags publish immediately for testers; stable tags create a
+      # draft so the title and notes get a human pass before publishing.
+      - name: Determine release channel
+        id: channel
+        run: |
+          case "$GITHUB_REF_NAME" in
+            *-alpha*|*-beta*|*-rc*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Generate changelog
+        id: changelog
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: .github/cliff.toml
+          args: --latest --strip header
+        continue-on-error: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          name: v${{ steps.version.outputs.version }}
+          body: |
+            ## Craft MCP v${{ steps.version.outputs.version }}
+
+            ${{ steps.changelog.outputs.content }}
+
+            ### Installation
+
+            ```bash
+            composer require happyhorizon/craft-mcp:^${{ steps.version.outputs.version }}
+            ```
+          draft: ${{ steps.channel.outputs.prerelease == 'false' }}
+          prerelease: ${{ steps.channel.outputs.prerelease == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

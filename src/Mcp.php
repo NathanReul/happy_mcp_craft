@@ -1,0 +1,520 @@
+<?php
+
+declare(strict_types=1);
+
+namespace stimmt\craft\Mcp;
+
+use Craft;
+use craft\events\RegisterTemplateRootsEvent;
+use craft\events\RegisterUrlRulesEvent;
+use craft\i18n\PhpMessageSource;
+use craft\services\Path;
+use craft\web\Request as WebRequest;
+use craft\web\UrlManager;
+use craft\web\View;
+use Override;
+use stimmt\craft\Mcp\models\Settings;
+use stimmt\craft\Mcp\services\PromptRegistry;
+use stimmt\craft\Mcp\services\ResourceRegistry;
+use stimmt\craft\Mcp\services\ServerFactory;
+use stimmt\craft\Mcp\services\ToolRegistry;
+use stimmt\craft\Mcp\support\Build;
+use stimmt\craft\Mcp\web\Cp;
+use yii\base\Event;
+use yii\base\Module as BaseModule;
+
+/**
+ * Craft MCP Module
+ *
+ * Provides MCP (Model Context Protocol) server functionality for Craft CMS.
+ * This allows AI assistants like Claude to interact with Craft installations.
+ *
+ * Registered as a Craft module (config/app.php), not as a plugin: drop the
+ * directory into the project, bootstrap the module, done. Everything a
+ * plugin gets for free - controller namespaces, the translation category,
+ * the control panel template root - is wired here instead.
+ *
+ * @author Max van Essen <support@stimmt.digital>
+ */
+class Mcp extends BaseModule {
+    /**
+     * Event fired to allow plugins to register MCP tools.
+     */
+    public const EVENT_REGISTER_TOOLS = 'registerTools';
+
+    /**
+     * Event fired to allow plugins to register MCP prompts.
+     */
+    public const EVENT_REGISTER_PROMPTS = 'registerPrompts';
+
+    /**
+     * Event fired to allow plugins to register MCP resources.
+     */
+    public const EVENT_REGISTER_RESOURCES = 'registerResources';
+
+    /**
+     * Event fired to let plugins register elements field translators.
+     */
+    public const EVENT_REGISTER_FIELD_TRANSLATORS = 'registerFieldTranslators';
+
+    /**
+     * Tools that can modify data or execute code.
+     *
+     * @deprecated Use getToolRegistry()->getDangerousTools() instead.
+     *             This constant is kept for backwards compatibility.
+     */
+    public const DANGEROUS_TOOLS = [
+        'tinker',
+        'run_query',
+        'create_entry',
+        'update_entry',
+        'clear_caches',
+        'create_backup',
+        'execute_graphql',
+    ];
+
+    /**
+     * The module id this extension expects to be registered under, and the
+     * prefix of every route, console command and template it owns.
+     */
+    public const HANDLE = 'mcp';
+
+    public string $handle = self::HANDLE;
+
+    public string $name = 'Craft MCP';
+
+    public string $version = '1.4.0';
+
+    public string $schemaVersion = '1.4.0';
+
+    /**
+     * Settings supplied inline from config/app.php, e.g.
+     * 'mcp' => ['class' => Mcp::class, 'settings' => ['enabled' => true]].
+     * config/mcp.php still wins over anything set here.
+     *
+     * @var array<string, mixed>
+     */
+    public array $settings = [];
+
+    private static ?Settings $loadedSettings = null;
+
+    private static ?ToolRegistry $toolRegistry = null;
+
+    private static ?PromptRegistry $promptRegistry = null;
+
+    private static ?ResourceRegistry $resourceRegistry = null;
+
+    #[Override]
+    public function init(): void {
+        // Yii only registers the instance after construction finishes, and
+        // everything below (settings included) asks for it during init.
+        static::setInstance($this);
+
+        Craft::setAlias('@stimmt/craft/Mcp', __DIR__);
+
+        // Installed as a Composer package, the released version is a fact
+        // composer recorded; copied in by hand, the declared one above is
+        // all there is. Both readers of this - getVersion() and the version
+        // field get_mcp_info reports - then agree.
+        $this->version = Build::version();
+
+        // Routes, console commands, control panel templates and the
+        // translation category are all built around this id; registered
+        // under a different key, half of the module silently disappears.
+        if ($this->id !== self::HANDLE) {
+            Craft::warning(sprintf('The MCP module is registered as "%s" but everything it exposes is keyed to "%s". Register it under that id in config/app.php.', $this->id, self::HANDLE), __METHOD__);
+        }
+
+        $this->controllerNamespace = Craft::$app->getRequest()->getIsConsoleRequest()
+            ? __NAMESPACE__ . '\console\controllers'
+            : __NAMESPACE__ . '\controllers';
+
+        parent::init();
+
+        $this->registerTranslations();
+        $this->registerTemplateRoots();
+        $this->registerHttpEndpoint();
+        $this->registerCp();
+
+        Craft::info('Craft MCP module loaded', __METHOD__);
+    }
+
+    /**
+     * The version reported to MCP clients. A module has no Composer package
+     * metadata behind it, so the value declared above is the only source.
+     */
+    #[Override]
+    public function getVersion(): string {
+        return $this->version;
+    }
+
+    /**
+     * Get the module settings with config file overrides applied.
+     */
+    public static function settings(): Settings {
+        if (self::$loadedSettings !== null) {
+            return self::$loadedSettings;
+        }
+
+        // Production safety defaults are applied FIRST and unconditionally,
+        // so neither app.php nor a config file silently re-enables dangerous
+        // tools in production; only an explicit key overrides them.
+        $settings = self::applyProductionDefaults(new Settings());
+        $settings = self::applyOverrides($settings, self::getInstance()?->settings ?? []);
+
+        self::$loadedSettings = self::applyConfigOverrides($settings);
+
+        return self::$loadedSettings;
+    }
+
+    /**
+     * Craft resolves 'mcp/...' control panel templates for plugins on its
+     * own; a module has to say where its templates live.
+     */
+    private function registerTemplateRoots(): void {
+        Event::on(
+            View::class,
+            View::EVENT_REGISTER_CP_TEMPLATE_ROOTS,
+            static function (RegisterTemplateRootsEvent $event): void {
+                $event->roots[self::HANDLE] = __DIR__ . '/templates';
+            },
+        );
+    }
+
+    /**
+     * Same story for the 'mcp' translation category every Craft::t() call in
+     * this codebase uses.
+     */
+    private function registerTranslations(): void {
+        $i18n = Craft::$app->getI18n();
+
+        if (isset($i18n->translations[self::HANDLE])) {
+            return;
+        }
+
+        $i18n->translations[self::HANDLE] = [
+            'class' => PhpMessageSource::class,
+            'sourceLanguage' => 'en',
+            'basePath' => __DIR__ . '/translations',
+            'allowOverrides' => true,
+        ];
+    }
+
+    /**
+     * Get the tool registry instance.
+     */
+    public static function getToolRegistry(): ToolRegistry {
+        if (self::$toolRegistry === null) {
+            self::$toolRegistry = new ToolRegistry();
+        }
+
+        return self::$toolRegistry;
+    }
+
+    /**
+     * Get the prompt registry instance.
+     */
+    public static function getPromptRegistry(): PromptRegistry {
+        if (self::$promptRegistry === null) {
+            self::$promptRegistry = new PromptRegistry();
+        }
+
+        return self::$promptRegistry;
+    }
+
+    /**
+     * Get the resource registry instance.
+     */
+    public static function getResourceRegistry(): ResourceRegistry {
+        if (self::$resourceRegistry === null) {
+            self::$resourceRegistry = new ResourceRegistry();
+        }
+
+        return self::$resourceRegistry;
+    }
+
+    /**
+     * Reset the tool registry to force re-initialization.
+     *
+     * Useful for detecting newly installed plugins without full server restart.
+     */
+    public static function resetToolRegistry(): void {
+        self::$toolRegistry = null;
+    }
+
+    /**
+     * Reset the prompt registry to force re-initialization.
+     */
+    public static function resetPromptRegistry(): void {
+        self::$promptRegistry = null;
+    }
+
+    /**
+     * Reset the resource registry to force re-initialization.
+     */
+    public static function resetResourceRegistry(): void {
+        self::$resourceRegistry = null;
+    }
+
+    /**
+     * Reset all registries to force re-initialization.
+     *
+     * Useful for detecting newly installed plugins without full server restart.
+     */
+    public static function resetRegistries(): void {
+        self::$toolRegistry = null;
+        self::$promptRegistry = null;
+        self::$resourceRegistry = null;
+    }
+
+    /**
+     * Create a new MCP server factory instance.
+     *
+     * The factory handles server building with proper SDK patterns,
+     * including discovery, container, and logging configuration.
+     */
+    public function getServerFactory(): ServerFactory {
+        return new ServerFactory();
+    }
+
+    /**
+     * Registers the HTTP transport endpoint when enabled. Off by default: no
+     * setting, no route, no surface.
+     */
+    private function registerHttpEndpoint(): void {
+        $request = Craft::$app->getRequest();
+        if (!$request instanceof WebRequest) {
+            return;
+        }
+
+        $settings = self::settings();
+        if (!$settings->httpTransport) {
+            return;
+        }
+
+        Event::on(
+            UrlManager::class,
+            UrlManager::EVENT_REGISTER_SITE_URL_RULES,
+            static function (RegisterUrlRulesEvent $event) use ($settings): void {
+                $event->rules[$settings->httpPath] = 'mcp/http/handle';
+            },
+        );
+
+        $this->registerCpEndpointRule($settings);
+    }
+
+    /**
+     * With the control panel on the root of its domain (empty cpTrigger),
+     * every request on that host is a CP request and site URL rules are
+     * never consulted, so the endpoint must exist as a CP rule too. Craft
+     * additionally intercepts guest CP requests whose first segment matches
+     * a plugin handle or module id (template routing) BEFORE any URL rule
+     * runs, so the default path, which equals this module's id, cannot be
+     * served on such hosts; the site owner must pick another httpPath.
+     */
+    private function registerCpEndpointRule(Settings $settings): void {
+        $trigger = Craft::$app->getConfig()->getGeneral()->cpTrigger;
+        if ($trigger !== null && $trigger !== '') {
+            return;
+        }
+
+        if ($settings->httpPath === $this->id) {
+            Craft::warning(sprintf('httpPath "%s" matches the module id; with the control panel on the root domain, Craft intercepts that path for guests before routing. Set httpPath to a different value (for example "mcp-http") to serve the MCP endpoint on this host.', $settings->httpPath), __METHOD__);
+
+            return;
+        }
+
+        Event::on(
+            UrlManager::class,
+            UrlManager::EVENT_REGISTER_CP_URL_RULES,
+            static function (RegisterUrlRulesEvent $event) use ($settings): void {
+                $event->rules[$settings->httpPath] = 'mcp/http/handle';
+            },
+        );
+    }
+
+    /**
+     * Registers the CP token-management surface when enabled. Off by
+     * default: no setting, no screen, no route, no permission, no surface.
+     */
+    private function registerCp(): void {
+        $request = Craft::$app->getRequest();
+        if (!$request instanceof WebRequest || !$request->getIsCpRequest()) {
+            return;
+        }
+
+        if (!self::settings()->httpTransport) {
+            return;
+        }
+
+        Cp::register();
+    }
+
+    /**
+     * Copy a plain key => value map onto the settings object, ignoring keys
+     * the model does not define.
+     *
+     * @param array<array-key, mixed> $overrides
+     */
+    private static function applyOverrides(Settings $settings, array $overrides): Settings {
+        foreach ($overrides as $key => $value) {
+            if (is_string($key) && property_exists($settings, $key)) {
+                $settings->$key = $value;
+            }
+        }
+
+        return $settings;
+    }
+
+    /**
+     * Apply config/mcp.php overrides to settings. The caller has already
+     * applied the production safety defaults, so only an explicit key in
+     * the file can lift them.
+     */
+    private static function applyConfigOverrides(Settings $settings): Settings {
+        /** @var Path $pathService */
+        $pathService = Craft::$app->getPath();
+        $configPath = $pathService->getConfigPath() . '/mcp.php';
+
+        if (!file_exists($configPath)) {
+            return $settings;
+        }
+
+        $config = require $configPath;
+        if (!is_array($config)) {
+            return $settings;
+        }
+
+        return self::applyOverrides($settings, self::resolveEnvironmentConfig($config, self::environment()));
+    }
+
+    /**
+     * Craft's multi-environment config convention: a file with a '*' key is
+     * environment-nested; the '*' base is merged with the current
+     * environment's block. Files without a '*' key are flat and untouched.
+     *
+     * @param array<array-key, mixed> $config
+     * @return array<array-key, mixed>
+     */
+    public static function resolveEnvironmentConfig(array $config, string $environment): array {
+        if (!isset($config['*']) || !is_array($config['*'])) {
+            return $config;
+        }
+
+        $environmentConfig = $config[$environment] ?? [];
+
+        return array_merge($config['*'], is_array($environmentConfig) ? $environmentConfig : []);
+    }
+
+    private static function environment(): string {
+        return Craft::$app->env ?? getenv('CRAFT_ENVIRONMENT') ?: 'production';
+    }
+
+    /**
+     * Safe defaults per environment, applied before any config file.
+     */
+    private static function applyProductionDefaults(Settings $settings): Settings {
+        if (self::environment() === 'production') {
+            $settings->enabled = false;
+            $settings->enableDangerousTools = false;
+        }
+
+        return $settings;
+    }
+
+    /**
+     * Check if MCP is enabled.
+     */
+    public static function isEnabled(): bool {
+        return self::settings()->enabled;
+    }
+
+    /**
+     * Check if a specific tool is enabled.
+     */
+    public static function isToolEnabled(string $toolName): bool {
+        $settings = self::settings();
+
+        if (!$settings->enabled) {
+            return false;
+        }
+
+        if (in_array($toolName, $settings->disabledTools, true)) {
+            return false;
+        }
+
+        // Get tool definition from registry
+        $definition = self::getToolRegistry()->getDefinition($toolName);
+
+        // Check method-level condition
+        if ($definition !== null && !$definition->isConditionMet()) {
+            return false;
+        }
+
+        // Check if tool is dangerous
+        $isDangerous = $definition !== null
+            ? $definition->dangerous
+            : in_array($toolName, self::DANGEROUS_TOOLS, true); // Fallback for backwards compat
+
+        return !$isDangerous || $settings->enableDangerousTools;
+    }
+
+    /**
+     * Check if a specific prompt is enabled.
+     */
+    public static function isPromptEnabled(string $promptName): bool {
+        $settings = self::settings();
+
+        if (!$settings->enabled) {
+            return false;
+        }
+
+        if (in_array($promptName, $settings->disabledPrompts, true)) {
+            return false;
+        }
+
+        // Get prompt definition from registry
+        $definition = self::getPromptRegistry()->getDefinition($promptName);
+
+        // Check method-level condition
+        if ($definition !== null && !$definition->isConditionMet()) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Check if a specific resource is enabled.
+     */
+    public static function isResourceEnabled(string $resourceUri): bool {
+        $settings = self::settings();
+
+        if (!$settings->enabled) {
+            return false;
+        }
+
+        if (in_array($resourceUri, $settings->disabledResources, true)) {
+            return false;
+        }
+
+        // Get resource definition from registry
+        $definition = self::getResourceRegistry()->getDefinition($resourceUri);
+
+        // Check method-level condition
+        if ($definition !== null && !$definition->isConditionMet()) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Get all dangerous tool names.
+     *
+     * @return string[]
+     */
+    public static function getDangerousTools(): array {
+        return self::getToolRegistry()->getDangerousTools();
+    }
+}

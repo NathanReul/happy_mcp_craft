@@ -1,0 +1,108 @@
+<?php
+
+declare(strict_types=1);
+
+use Mcp\Capability\Attribute\McpTool;
+use stimmt\craft\Mcp\attributes\McpToolMeta;
+use stimmt\craft\Mcp\tools\EntryWorkflowTools;
+
+describe('EntryWorkflowTools structure', function () {
+    it('exposes the four workflow tools, all dangerous', function (string $method, string $name) {
+        $reflection = new ReflectionMethod(EntryWorkflowTools::class, $method);
+
+        expect($reflection->getAttributes(McpTool::class)[0]->newInstance()->name)->toBe($name)
+            ->and($reflection->getAttributes(McpToolMeta::class)[0]->newInstance()->dangerous)->toBeTrue();
+    })->with([
+        ['publishEntry', 'publish_entry'],
+        ['deleteEntry', 'delete_entry'],
+        ['duplicateEntry', 'duplicate_entry'],
+        ['copyEntryToSite', 'copy_entry_to_site'],
+    ]);
+
+    // Shape-level (behavior needs a Craft app; dev/integration-elements.py is
+    // the acceptance test): a canonical id must resolve to its single pending
+    // non-provisional draft, fail loudly on several, and refuse a no-op
+    // publish (final-review C3).
+    it('publishes a canonical id through its pending draft lookup', function () {
+        $source = (string) file_get_contents((new ReflectionClass(EntryWorkflowTools::class))->getFileName());
+
+        expect($source)->toContain('->draftOf(')
+            ->and($source)->toContain('->provisionalDrafts(false)')
+            ->and($source)->toContain('multiple pending drafts')
+            ->and($source)->toContain('nothing to publish');
+    });
+});
+
+describe('publish_entry block ordering', function () {
+    // Applying a draft of a single nested block silently moved it to the end
+    // of its Matrix field: applyDraft clones the draft with draftId nulled,
+    // so NestedElementTrait::saveOwnership() skips its sortOrder recovery
+    // lookup and falls through to max+1. The fix presets the canonical's
+    // current position on the draft BEFORE the apply, because saveOwnership
+    // checks isset(sortOrder) before either fallback and the preset value is
+    // then written inside the apply transaction. NestedPosition::capture's
+    // guard behavior is covered in NestedPositionTest; this pins the preset
+    // and its position relative to the apply call, which needs a real
+    // install to run.
+    it('presets the captured sort order on the draft before applying it', function () {
+        $reflection = new ReflectionMethod(EntryWorkflowTools::class, 'applyDraft');
+        $file = (string) file_get_contents($reflection->getFileName());
+        $body = implode("\n", array_slice(
+            explode("\n", $file),
+            $reflection->getStartLine() - 1,
+            $reflection->getEndLine() - $reflection->getStartLine() + 1,
+        ));
+
+        $capture = strpos($body, 'NestedPosition::capture($draft)');
+        $preset = strpos($body, '$draft->setSortOrder(');
+        $apply = strpos($body, '->applyDraft($draft)');
+
+        expect($capture)->toBeInt()
+            ->and($preset)->toBeInt()
+            ->and($apply)->toBeInt()
+            ->and($capture)->toBeLessThan($preset)
+            ->and($preset)->toBeLessThan($apply);
+    });
+});
+
+describe('publish_entry resource notification', function () {
+    // publish_entry is the true canonical-change moment for the default
+    // draft-first flow: applyDraft() merges the draft into the canonical
+    // entry, and the enable() branch flips a disabled live entry on. Both
+    // are real changes to what craft://entries/{section}/{slug} serves, so
+    // both notify through the shared ResourceChangeNotifier.
+    it('notifies through the shared ResourceChangeNotifier once a draft is applied and once an entry is enabled', function () {
+        $source = (string) file_get_contents((new ReflectionClass(EntryWorkflowTools::class))->getFileName());
+
+        expect(substr_count($source, 'ResourceChangeNotifier::notifyEntry('))->toBe(2);
+    });
+
+    it('threads the RequestContext from publishEntry into both applyDraft and publishCanonical', function () {
+        $applyDraft = new ReflectionMethod(EntryWorkflowTools::class, 'applyDraft');
+        $publishCanonical = new ReflectionMethod(EntryWorkflowTools::class, 'publishCanonical');
+
+        expect(array_map(fn (ReflectionParameter $p): string => $p->getName(), $applyDraft->getParameters()))
+            ->toContain('context')
+            ->and(array_map(fn (ReflectionParameter $p): string => $p->getName(), $publishCanonical->getParameters()))
+            ->toContain('context');
+    });
+});
+
+describe('list_revisions', function () {
+    it('is registered read-only with id, site, and pagination parameters', function () {
+        $method = new ReflectionMethod(EntryWorkflowTools::class, 'listRevisions');
+        $tool = $method->getAttributes(McpTool::class)[0]->newInstance();
+        $params = array_map(fn (ReflectionParameter $p): string => $p->getName(), $method->getParameters());
+
+        expect($tool->name)->toBe('list_revisions')
+            ->and($tool->annotations->readOnlyHint)->toBeTrue()
+            ->and($params)->toContain('id')->toContain('site')->toContain('limit')->toContain('offset');
+    });
+
+    it('summarizes revisions through the RevisionBehavior guard', function () {
+        $source = (string) file_get_contents((new ReflectionClass(EntryWorkflowTools::class))->getFileName());
+
+        expect($source)->toContain('RevisionBehavior')
+            ->and($source)->toContain('revisionOf(');
+    });
+});

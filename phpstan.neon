@@ -1,0 +1,51 @@
+rules:
+    - Sanmai\PHPStanRules\Rules\NoNestedLoopsRule
+    - Sanmai\PHPStanRules\Rules\NoNestedIfStatementsRule
+    - Sanmai\PHPStanRules\Rules\RequireGuardClausesRule
+    - Sanmai\PHPStanRules\Rules\NoElseRule
+
+parameters:
+    level: 5
+
+    # Analyse against the whole supported PHP range (matches the CI matrix), so
+    # use of a symbol or syntax outside 8.3 to 8.5 is flagged on the host
+    # regardless of the local PHP version. This is the "compatibility" gate that
+    # runs locally via composer analyse and the pre-push hook.
+    phpVersion:
+        min: 80300
+        max: 80500
+
+    paths:
+        - src
+    tmpDir: .phpstan.cache
+
+    # Scan Craft/Yii for class definitions
+    scanDirectories:
+        - vendor/craftcms/cms/src
+        - vendor/yiisoft/yii2
+
+    ignoreErrors:
+        # SafeExecution template type inference in closures with complex operations
+        - identifier: argument.unresolvableType
+        # Craft's service locator methods (Craft::$app->getVolumes(), etc.)
+        - '#Call to an undefined method yii\\console\\Application\|yii\\web\\Application.*::#'
+        - '#Call to an undefined method yii\\db\\Schema.*::findIndexes#'
+        # PsySH optional dependency
+        - '#Psy\\#'
+        # Commerce is optional - tools check availability at runtime
+        - '#craft\\commerce\\#'
+        # Missing class reference (if class doesn't exist)
+        - '#Class stimmt\\craft\\Mcp\\tools\\SchemaTools not found#'
+        # CustomFieldBehavior only exists as an uncompiled template in vendor;
+        # Craft::autoload() compiles the real class into memory at runtime
+        - '#Access to static property \$fieldHandles on an unknown class craft\\behaviors\\CustomFieldBehavior\.#'
+        # Dead catch - ReflectionException
+        - '#Dead catch#'
+        # array_values on list is intentional for re-indexing
+        - '#array_values is already a list#'
+        # Defensive null coalescing
+        - '#on left side of \?\? always exists#'
+        # Yii identity can be array in edge cases
+        - '#Cannot access property \$id on array#'
+
+    reportUnmatchedIgnoredErrors: false

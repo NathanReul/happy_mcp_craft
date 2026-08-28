@@ -1,0 +1,61 @@
+<?php
+
+declare(strict_types=1);
+
+namespace stimmt\craft\Mcp\tools;
+
+use Craft;
+use Mcp\Capability\Attribute\McpTool;
+use Mcp\Schema\ToolAnnotations;
+use Mcp\Server\RequestContext;
+use stimmt\craft\Mcp\attributes\McpToolMeta;
+use stimmt\craft\Mcp\enums\ToolCategory;
+use stimmt\craft\Mcp\support\Response;
+use stimmt\craft\Mcp\text\Serializer;
+
+/**
+ * Global set MCP tools for Craft CMS.
+ *
+ * @author Max van Essen <support@stimmt.digital>
+ */
+class GlobalSetTools {
+    /**
+     * List all global sets.
+     */
+    #[McpTool(
+        name: 'list_globals',
+        title: 'Global set values',
+        description: 'List all global sets in Craft CMS with their field values',
+        annotations: new ToolAnnotations(readOnlyHint: true, idempotentHint: true),
+    )]
+    #[McpToolMeta(category: ToolCategory::CONTENT, privileged: true)]
+    public function listGlobals(?RequestContext $context = null): array {
+        $globalSets = Craft::$app->getGlobals()->getAllSets();
+        $results = array_map($this->serializeGlobalSet(...), $globalSets);
+
+        return Response::list('globals', $results);
+    }
+
+    /**
+     * Serialize a global set to array.
+     */
+    private function serializeGlobalSet(mixed $globalSet): array {
+        $fieldValues = [];
+        $fieldLayout = $globalSet->getFieldLayout();
+
+        if ($fieldLayout !== null) {
+            foreach ($fieldLayout->getCustomFields() as $field) {
+                $fieldValues[$field->handle] = Serializer::serialize(
+                    $globalSet->getFieldValue($field->handle),
+                );
+            }
+        }
+
+        return [
+            'id' => $globalSet->id,
+            'handle' => $globalSet->handle,
+            'name' => $globalSet->name,
+            'fields' => $fieldValues,
+        ];
+    }
+}
