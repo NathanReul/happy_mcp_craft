@@ -19,7 +19,7 @@ Two ways in. If the code lives in your own Git repo (or on Packagist), require i
 
 ```bash
 composer config repositories.craft-mcp vcs https://github.com/<you>/craft-mcp.git
-composer require happyhorizon/craft-mcp:^1.0
+composer require happy-horizon/craft-mcp:^1.0
 ```
 
 Otherwise copy it into the project, as steps 1 and 2 describe. Both routes in full: [INSTALL.md](../INSTALL.md).
@@ -43,7 +43,7 @@ The module has Composer dependencies of its own (the MCP SDK, PsySH, a PSR-7 imp
 ```bash
 # from your Craft root
 composer config repositories.craft-mcp path modules/mcp
-composer require happyhorizon/craft-mcp:*
+composer require happy-horizon/craft-mcp:*
 ```
 
 Composer symlinks `modules/mcp` into `vendor/`, so edits to the module take effect immediately, and `composer update` never overwrites it with a Packagist release.

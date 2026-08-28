@@ -15,15 +15,15 @@ Push this repository to your own GitHub/GitLab, tag a release, then:
 
 ```bash
 composer config repositories.craft-mcp vcs https://github.com/<you>/craft-mcp.git
-composer require happyhorizon/craft-mcp:^1.0
+composer require happy-horizon/craft-mcp:^1.0
 ```
 
 Nothing lands in your project's Git tree, the exact commit is pinned in `composer.lock`,
 and any pipeline that already runs `composer install` deploys it with no extra steps.
-Updates are `composer update happyhorizon/craft-mcp`. Private repos work too; the deploy
+Updates are `composer update happy-horizon/craft-mcp`. Private repos work too; the deploy
 machine needs a token in its Composer auth config.
 
-Published to Packagist instead? Then it is just `composer require happyhorizon/craft-mcp`
+Published to Packagist instead? Then it is just `composer require happy-horizon/craft-mcp`
 with no `repositories` line at all.
 
 ### Route B - Copied into the project
@@ -33,7 +33,7 @@ Composer at it so the dependencies and autoloading are still handled:
 
 ```bash
 composer config repositories.craft-mcp path modules/mcp
-composer require happyhorizon/craft-mcp:*
+composer require happy-horizon/craft-mcp:*
 ```
 
 Composer links `modules/mcp` into `vendor/`, so your edits are live and `composer update`
@@ -163,7 +163,7 @@ For remote users over HTTP instead of stdio, see
 
 ## Updating
 
-Route A: `composer update happyhorizon/craft-mcp`. Routes B and C: replace the directory.
+Route A: `composer update happy-horizon/craft-mcp`. Routes B and C: replace the directory.
 Either way, afterwards:
 
 ```bash
@@ -187,7 +187,7 @@ can be deleted, as can the `require-dev` and `scripts` blocks in `composer.json`
   `config/app.php`, then `config/mcp.php` - with the production safety defaults applied
   before all of them, so only an explicit key can lift them.
 - `php craft mcp/setup` replaces `php craft plugin/install mcp`.
-- The package is `happyhorizon/craft-mcp`, `type: library`, so it can be published or
+- The package is `happy-horizon/craft-mcp`, `type: library`, so it can be published or
   required from a VCS repo without colliding with upstream's `stimmt/craft-mcp` on
   Packagist. Client configs point at the module's real location rather than a fixed
   `vendor/` path.

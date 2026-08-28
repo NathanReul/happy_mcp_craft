@@ -64,7 +64,7 @@ jobs:
             ### Installation
 
             ```bash
-            composer require happyhorizon/craft-mcp:^${{ steps.version.outputs.version }}
+            composer require happy-horizon/craft-mcp:^${{ steps.version.outputs.version }}
             ```
           draft: ${{ steps.channel.outputs.prerelease == 'false' }}
           prerelease: ${{ steps.channel.outputs.prerelease == 'true' }}

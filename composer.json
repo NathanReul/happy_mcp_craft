@@ -1,5 +1,5 @@
 {
-    "name": "happyhorizon/craft-mcp",
+    "name": "happy-horizon/craft-mcp",
     "description": "MCP (Model Context Protocol) server for Craft CMS, packaged as a drop-in Craft module",
     "type": "library",
     "license": "MIT",

@@ -19,14 +19,14 @@ Craft MCP is a Craft **module** in a plain Composer package - no plugin store, n
 
 ```bash
 composer config repositories.craft-mcp vcs https://github.com/<you>/craft-mcp.git
-composer require happyhorizon/craft-mcp:^1.0
+composer require happy-horizon/craft-mcp:^1.0
 ```
 
 or copy this directory to `modules/mcp` and point Composer at that instead:
 
 ```bash
 composer config repositories.craft-mcp path modules/mcp
-composer require happyhorizon/craft-mcp:*
+composer require happy-horizon/craft-mcp:*
 ```
 
 Register it in `config/app.php`:

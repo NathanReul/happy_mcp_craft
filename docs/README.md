@@ -58,7 +58,7 @@ Install as a module. Copy this directory to `modules/mcp`, register it in `confi
 
 ```bash
 composer config repositories.craft-mcp path modules/mcp
-composer require happyhorizon/craft-mcp:*
+composer require happy-horizon/craft-mcp:*
 php craft mcp/setup
 ```
 

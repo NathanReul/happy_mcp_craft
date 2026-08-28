@@ -16,7 +16,7 @@ declare(strict_types=1);
  * restart re-execs with stdin and stdout already closed, which is what
  * transport\Stdio::close() exists to prevent.
  */
-$cmd = 'exec php /var/www/html/backend/vendor/happyhorizon/craft-mcp/bin/mcp-server';
+$cmd = 'exec php /var/www/html/backend/vendor/happy-horizon/craft-mcp/bin/mcp-server';
 $p = proc_open($cmd, [0 => ['pipe','r'], 1 => ['pipe','w'], 2 => ['pipe','w']], $pipes);
 $pid = proc_get_status($p)['pid'];
 

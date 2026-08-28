@@ -26,7 +26,7 @@ use stimmt\craft\Mcp\Mcp;
  * @author Max van Essen <support@stimmt.digital>
  */
 final class Build {
-    public const string PACKAGE = 'happyhorizon/craft-mcp';
+    public const string PACKAGE = 'happy-horizon/craft-mcp';
 
     private const int SHORT_REFERENCE = 12;
 
