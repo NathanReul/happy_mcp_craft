@@ -10,6 +10,8 @@ use craft\helpers\Console;
 use Exception;
 use JsonException;
 use Override;
+use stimmt\craft\Mcp\installer\clients\Antigravity;
+use stimmt\craft\Mcp\installer\clients\Base;
 use stimmt\craft\Mcp\installer\clients\ClaudeCode;
 use stimmt\craft\Mcp\installer\clients\ClaudeDesktop;
 use stimmt\craft\Mcp\installer\clients\Cursor;
@@ -24,7 +26,7 @@ use yii\console\ExitCode;
  * MCP client configuration installer.
  *
  * Interactive wizard to generate configuration files for various MCP clients
- * (Claude Code, Cursor, Claude Desktop).
+ * (Claude Code, Cursor, Antigravity, Claude Desktop).
  *
  * @author stimmt.digital
  */
@@ -104,6 +106,8 @@ class InstallController extends Controller {
         // 6. Generate and write configurations
         $this->stdout(PHP_EOL . 'Generating configuration files...' . PHP_EOL . PHP_EOL);
 
+        $this->writeDdevWrapperIfNeeded($clients, $environment, $configRoot, $craftSubdirectory, $configWriter);
+
         foreach ($clients as $client) {
             $this->writeClientConfig($client, $environment, $projectPath, $craftSubdirectory, $serverName, $configWriter);
         }
@@ -163,13 +167,18 @@ class InstallController extends Controller {
         $detected = $resolver->resolve();
         $subdirectory = $resolver->getSubdirectory($detected);
 
+        if (!$this->interactive) {
+            return [$detected, $subdirectory];
+        }
+
         $this->stdout(PHP_EOL);
 
         $default = $subdirectory ?? '';
         $label = $default !== '' ? "Craft subdirectory ({$default}):" : 'Craft subdirectory:';
 
         $this->stdout($label . ' ');
-        $input = trim(fgets(STDIN));
+        $rawInput = fgets(STDIN);
+        $input = is_string($rawInput) ? trim($rawInput) : '';
 
         if ($input === '') {
             $input = $default;
@@ -204,6 +213,14 @@ class InstallController extends Controller {
             $label = sprintf('%s (%s)', $client->getName(), $client->getDescription());
             $default = $client->getId() !== 'claude-desktop'; // Default yes for all except Claude Desktop
 
+            if (!$this->interactive) {
+                if ($default) {
+                    $selected[] = $client;
+                }
+
+                continue;
+            }
+
             if ($this->confirm("  Configure {$label}?", $default)) {
                 $selected[] = $client;
             }
@@ -221,6 +238,7 @@ class InstallController extends Controller {
         return [
             new ClaudeCode($craftRoot, $configRoot, $envDetector),
             new Cursor($craftRoot, $configRoot, $envDetector),
+            new Antigravity($craftRoot, $configRoot, $envDetector),
             new ClaudeDesktop($craftRoot, $configRoot, $envDetector),
         ];
     }
@@ -287,7 +305,7 @@ class InstallController extends Controller {
                 Console::FG_YELLOW,
             );
 
-            if (!$this->confirm('Overwrite existing configuration?', false)) {
+            if (!$this->confirm('Overwrite existing configuration?', !$this->interactive)) {
                 // Let user choose a different name
                 return $this->prompt('Enter a different server name', [
                     'required' => true,
@@ -296,6 +314,37 @@ class InstallController extends Controller {
         }
 
         return $serverName;
+    }
+
+    /**
+     * Write the portable DDEV wrapper script when configuring project-scoped DDEV clients.
+     *
+     * @param Client[] $clients
+     */
+    private function writeDdevWrapperIfNeeded(
+        array $clients,
+        string $environment,
+        string $configRoot,
+        ?string $craftSubdirectory,
+        ConfigWriter $configWriter,
+    ): void {
+        if ($environment !== EnvironmentDetector::DDEV) {
+            return;
+        }
+
+        $wrapperClient = array_find(
+            $clients,
+            fn (Client $client): bool => $client instanceof Base && !$client->requiresAbsolutePaths(),
+        );
+
+        if (!$wrapperClient instanceof Base) {
+            return;
+        }
+
+        $wrapperPath = $configRoot . '/' . Base::WRAPPER_RELATIVE_PATH;
+        $content = $wrapperClient->renderDdevWrapper($craftSubdirectory);
+        $result = $configWriter->writeExecutable($wrapperPath, $content);
+        $this->printWriteResult($result);
     }
 
     /**
@@ -312,6 +361,14 @@ class InstallController extends Controller {
         $config = $client->generateServerConfig($environment, $projectPath, $craftSubdirectory);
 
         try {
+            if ($client instanceof Antigravity) {
+                $manifestResult = $configWriter->writeJson(
+                    $client->getPluginManifestPath(),
+                    $client->getPluginManifest(),
+                );
+                $this->printWriteResult($manifestResult);
+            }
+
             $result = $configWriter->write($client->getConfigPath(), $serverName, $config);
             $this->printWriteResult($result);
         } catch (JsonException $e) {

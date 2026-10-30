@@ -8,9 +8,10 @@ use Mcp\Server\Transport\StdioTransport;
 use Override;
 use Psr\Log\LoggerInterface;
 use stimmt\craft\Mcp\support\SignalHandler;
+use Symfony\Component\Uid\Uuid;
 
 /**
- * The stdio transport, with two corrections the SDK's own cannot make.
+ * The stdio transport, with corrections the SDK's own cannot make.
  *
  * @author Max van Essen <support@stimmt.digital>
  */
@@ -68,6 +69,18 @@ final class Stdio extends StdioTransport {
         }
 
         parent::processInput();
+    }
+
+    #[Override]
+    protected function handleMessage(string $payload, ?Uuid $sessionId): void {
+        $discoverReply = ServerDiscover::reply($payload);
+        if ($discoverReply !== null) {
+            $this->send($discoverReply, ['type' => 'response']);
+
+            return;
+        }
+
+        parent::handleMessage($payload, $sessionId);
     }
 
     private function busy(): bool {

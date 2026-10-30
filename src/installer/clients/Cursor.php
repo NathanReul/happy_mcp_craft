@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace stimmt\craft\Mcp\installer\clients;
 
+use Override;
+
 /**
  * MCP client configuration for Cursor.
  *
@@ -24,5 +26,10 @@ final class Cursor extends Base {
 
     public function getConfigPath(): string {
         return $this->configRoot . '/.cursor/mcp.json';
+    }
+
+    #[Override]
+    protected function getDdevWrapperCommand(): string {
+        return '${workspaceFolder}/' . self::WRAPPER_RELATIVE_PATH;
     }
 }
