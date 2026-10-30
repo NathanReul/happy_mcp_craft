@@ -61,7 +61,7 @@ Then run the interactive wizard to configure your MCP clients:
 php craft mcp/install
 ```
 
-That is the whole happy path. Full install steps, including forks, in-project checkouts, updating, and troubleshooting, are in [INSTALL.md](INSTALL.md). For manual client configuration (Claude Code, Cursor, Claude Desktop, SSH), see the [Client Setup guide](docs/client-setup.md); for all options including tool disabling, IP allowlists, and environment defaults, see the [Configuration guide](docs/configuration.md).
+That is the whole happy path. Full install steps, including forks, in-project checkouts, updating, and troubleshooting, are in [INSTALL.md](INSTALL.md). For manual client configuration (Claude Code, Cursor, Antigravity, Claude Desktop, SSH), see the [Client Setup guide](docs/client-setup.md); for all options including tool disabling, IP allowlists, and environment defaults, see the [Configuration guide](docs/configuration.md).
 
 ## Installation Prompt
 
@@ -148,7 +148,7 @@ Other plugins and modules can register their own tools, prompts, resources, and 
 The [documentation index](docs/README.md) links everything; the direct routes:
 
 - **[Installation](INSTALL.md)** - Requirements, Composer setup, detailed installation steps
-- **[Client Setup](docs/client-setup.md)** - Wizard and manual configs for Claude Code, Cursor, Claude Desktop
+- **[Client Setup](docs/client-setup.md)** - Wizard and manual configs for Claude Code, Cursor, Antigravity, Claude Desktop
 - **[Configuration](docs/configuration.md)** - All configuration options and security settings
 - **[HTTP Transport](docs/http-transport.md)** - Remote access with per-user scoped bearer tokens
 - **[Content Writing](docs/content-writing.md)** - The payload format, draft workflow, and schema discovery for agents

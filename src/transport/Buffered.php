@@ -12,6 +12,7 @@ use Override;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Answers a suspended fiber with one complete JSON-RPC batch instead of a
@@ -72,6 +73,18 @@ final class Buffered extends StreamableHttpTransport {
             logger: $logger,
             middleware: $middleware,
         );
+    }
+
+    #[Override]
+    protected function handleMessage(string $payload, ?Uuid $sessionId): void {
+        $discoverReply = ServerDiscover::reply($payload);
+        if ($discoverReply !== null) {
+            $this->send($discoverReply, ['type' => 'response']);
+
+            return;
+        }
+
+        parent::handleMessage($payload, $sessionId);
     }
 
     #[Override]

@@ -20,7 +20,12 @@ abstract class Base implements Client {
      * Craft root (symlinked checkout, unusual layout): the conventional spot
      * for a dropped-in module.
      */
-    protected const BIN_PATH = 'modules/mcp/bin/mcp-server';
+    protected const string BIN_PATH = 'modules/mcp/bin/mcp-server';
+
+    /**
+     * Relative path to the DDEV wrapper script generated in the config root.
+     */
+    public const string WRAPPER_RELATIVE_PATH = 'bin/craft-mcp-server';
 
     public function __construct(
         protected readonly string $projectRoot,
@@ -33,6 +38,17 @@ abstract class Base implements Client {
         return false;
     }
 
+    /**
+     * Command string to invoke the project's DDEV wrapper script, or null if
+     * this client invokes the DDEV binary directly.
+     */
+    protected function getDdevWrapperCommand(): ?string {
+        return null;
+    }
+
+    /**
+     * @return array{command: string, args?: string[], cwd?: string}
+     */
     public function generateServerConfig(string $environment, ?string $projectPath = null, ?string $craftSubdirectory = null): array {
         return match ($environment) {
             EnvironmentDetector::DDEV => $this->buildDdevConfig($projectPath, $craftSubdirectory),
@@ -42,13 +58,58 @@ abstract class Base implements Client {
     }
 
     /**
+     * Render the portable DDEV wrapper script for project-scoped MCP clients.
+     */
+    public function renderDdevWrapper(?string $craftSubdirectory = null): string {
+        $binPath = $this->getBinPath($craftSubdirectory);
+
+        return <<<BASH
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        root="\$(cd "\$(dirname "\$0")/.." && pwd)"
+        cd "\$root"
+
+        candidates=()
+        if command -v ddev >/dev/null 2>&1; then
+            candidates+=("\$(command -v ddev)")
+        fi
+        candidates+=(
+            /usr/bin/ddev
+            /usr/local/bin/ddev
+            /opt/homebrew/bin/ddev
+            /home/linuxbrew/.linuxbrew/bin/ddev
+            "\${HOME}/.ddev/bin/ddev"
+        )
+
+        for ddev in "\${candidates[@]}"; do
+            if [[ -n "\$ddev" && -x "\$ddev" ]]; then
+                exec "\$ddev" exec php "{$binPath}"
+            fi
+        done
+
+        echo "ddev not found. Install DDEV and ensure it is on PATH or in a standard location." >&2
+        exit 1
+
+        BASH;
+    }
+
+    /**
      * Build configuration for DDEV environment.
      *
      * @param string|null $projectPath Absolute project path (for clients that need it)
      * @param string|null $craftSubdirectory Relative path from project root to Craft root
-     * @return array{command: string, args: string[], cwd?: string}
+     * @return array{command: string, args?: string[], cwd?: string}
      */
     protected function buildDdevConfig(?string $projectPath, ?string $craftSubdirectory): array {
+        $wrapperCommand = $this->getDdevWrapperCommand();
+
+        if ($wrapperCommand !== null && !$this->requiresAbsolutePaths()) {
+            return [
+                'command' => $wrapperCommand,
+            ];
+        }
+
         $config = [
             'command' => $this->getDdevCommand($projectPath),
             'args' => ['exec', 'php', $this->getBinPath($craftSubdirectory)],

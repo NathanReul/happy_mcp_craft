@@ -45,6 +45,40 @@ final class ConfigWriter {
     }
 
     /**
+     * Write a standalone JSON file (such as an Antigravity plugin.json manifest).
+     *
+     * @param string $path Absolute path to the JSON file
+     * @param array<string, mixed> $data JSON payload
+     */
+    public function writeJson(string $path, array $data): WriteResult {
+        $existed = file_exists($path);
+
+        $this->save($path, $data);
+
+        return $existed ? WriteResult::overwritten($path) : WriteResult::created($path);
+    }
+
+    /**
+     * Write an executable script file (0755).
+     *
+     * @param string $path Absolute path to the executable file
+     * @param string $content Script content
+     */
+    public function writeExecutable(string $path, string $content): WriteResult {
+        $existed = file_exists($path);
+        $dir = dirname($path);
+
+        if (!is_dir($dir)) {
+            FileHelper::createDirectory($dir);
+        }
+
+        file_put_contents($path, $content);
+        @chmod($path, 0755);
+
+        return $existed ? WriteResult::overwritten($path) : WriteResult::created($path);
+    }
+
+    /**
      * Check if a server already exists in the config file.
      *
      * @param string $path Absolute path to the config file

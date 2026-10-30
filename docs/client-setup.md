@@ -13,8 +13,8 @@ php craft mcp/install
 The wizard will:
 
 1. Detect your environment (DDEV or native PHP)
-2. Let you select which clients to configure (Claude Code, Cursor, Claude Desktop)
-3. Generate the appropriate configuration files automatically
+2. Let you select which clients to configure (Claude Code, Cursor, Antigravity, Claude Desktop)
+3. Generate the appropriate configuration files (and `bin/craft-mcp-server` wrapper in DDEV environments) automatically
 
 It handles all the details: creating directories, setting correct paths for your environment, and warning you if a server with the same name already exists.
 
@@ -92,6 +92,51 @@ php craft mcp/install --interactive=0
     "craft-cms": {
       "command": "ddev",
       "args": ["exec", "php", "modules/mcp/bin/mcp-server"]
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary>Without DDEV (native PHP)</summary>
+
+```json
+{
+  "mcpServers": {
+    "craft-cms": {
+      "command": "php",
+      "args": ["modules/mcp/bin/mcp-server"]
+    }
+  }
+}
+```
+</details>
+
+### Antigravity
+
+`php craft mcp/install` generates a workspace plugin in `.agent/plugins/craft-cms/` containing `plugin.json` and `mcp_config.json` (plus `bin/craft-mcp-server` in DDEV environments):
+
+1. Create `.agent/plugins/craft-cms/plugin.json`:
+
+```json
+{
+  "name": "craft-cms",
+  "displayName": "Craft CMS MCP",
+  "description": "Craft CMS Model Context Protocol (MCP) server"
+}
+```
+
+2. Create `.agent/plugins/craft-cms/mcp_config.json`:
+
+<details>
+<summary>With DDEV (recommended for Craft projects)</summary>
+
+```json
+{
+  "mcpServers": {
+    "craft-cms": {
+      "command": "./bin/craft-mcp-server"
     }
   }
 }
